@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import { assignedHours, programProgressDelta } from "@/lib/metrics";
 
 type Organization = { id: string; name: string; region: string; team_code: string };
 type Program = { id: string; name: string; grade_band: string; support_model: string; focus_area: string; status: string };
@@ -107,9 +108,9 @@ export default function Home() {
   async function allocate(event: FormEvent<HTMLFormElement>) { await act(event, async () => { if (!db || !session?.user) return; const { error: e } = await db.rpc("set_staff_assignment", { p_capacity_id: poolId, p_program_id: assignProgram, p_hours: Number(assignHours) }); if (e) throw e; await refresh(session.user.id); setForm(""); setNotice("Capacity assigned without exceeding the pool limit."); }); }
   async function addAction(event: FormEvent<HTMLFormElement>) { await act(event, async () => { if (!db || !session?.user || !org) return; const { error: e } = await db.from("action_plans").insert({ organization_id: org.id, program_id: programId, objective: objective.trim(), measure: measure.trim(), owner_role: owner.trim(), due_on: due || null, created_by: session.user.id }); if (e) throw e; await refresh(session.user.id); setForm(""); setNotice("Action plan added."); }); }
   async function closeAction(a: Action) { if (!db || !session?.user) return; setBusy(true); try { const { error: e } = await db.from("action_plans").update({ status: a.status === "complete" ? "active" : "complete" }).eq("id", a.id); if (e) throw e; await refresh(session.user.id); } catch (e) { setError(e instanceof Error ? e.message : "Could not update action."); } finally { setBusy(false); } }
-  const assigned = (id: string) => assignments.filter((a) => a.capacity_id === id).reduce((n, a) => n + a.assigned_hours_week, 0);
+  const assigned = (id: string) => assignedHours(assignments, id);
   const series = (id: string) => snapshots.filter((s) => s.program_id === id).sort((a, b) => a.period_start.localeCompare(b.period_start));
-  const progressDelta = (id: string) => { const s = series(id).filter((x) => x.assessed >= 10); return s.length < 2 ? null : s[s.length - 1].met_benchmark / s[s.length - 1].assessed * 100 - s[0].met_benchmark / s[0].assessed * 100; };
+  const progressDelta = (id: string) => programProgressDelta(snapshots, id);
   const latestDate = snapshots.reduce((latest, s) => s.period_start > latest ? s.period_start : latest, "");
   const current = snapshots.filter((s) => s.period_start === latestDate);
   const enrolledTotal = current.reduce((n, s) => n + s.enrolled, 0);
